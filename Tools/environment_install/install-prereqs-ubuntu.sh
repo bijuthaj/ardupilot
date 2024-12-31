@@ -332,13 +332,13 @@ if [[ $SKIP_AP_GRAPHIC_ENV -ne 1 ]]; then
       SITL_PKGS+=" python3-wxgtk4.0"
       SITL_PKGS+=" fonts-freefont-ttf libfreetype6-dev libpng16-16 libportmidi-dev libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev libsdl1.2-dev"  # for pygame
   elif [ ${RELEASE_CODENAME} == 'lunar' ]; then
-      PYTHON_PKGS+=" wxpython opencv-python"
+      #PYTHON_PKGS+=" wxpython opencv-python"
       SITL_PKGS+=" python3-wxgtk4.0"
       SITL_PKGS+=" fonts-freefont-ttf libfreetype6-dev libpng16-16 libportmidi-dev libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev libsdl1.2-dev"  # for pygame
   elif [ ${RELEASE_CODENAME} == 'mantic' ] ||
        [ ${RELEASE_CODENAME} == 'noble' ] ||
        [ ${RELEASE_CODENAME} == 'oracular' ]; then
-      PYTHON_PKGS+=" wxpython opencv-python"
+      #PYTHON_PKGS+=" wxpython opencv-python"
       SITL_PKGS+=" python3-wxgtk4.0"
       SITL_PKGS+=" fonts-freefont-ttf libfreetype6-dev libpng16-16 libportmidi-dev libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev libsdl1.2-dev"  # for pygame
   elif [ ${RELEASE_CODENAME} == 'bullseye' ] ||

@@ -436,6 +436,10 @@ public:
     AP_Float fs_gcs_timeout;
 
     class ModeCircle mode_circle;
+
+    // Test variable for auto tune mode
+    AP_Float auto_tune_rate;
+    class ModeAutoTune mode_autotune;
 };
 
 extern const AP_Param::Info var_info[];

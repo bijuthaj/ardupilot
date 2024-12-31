@@ -99,6 +99,8 @@ public:
     friend class ModeManual;
     friend class ModeRTL;
     friend class ModeSmartRTL;
+    friend class ModeAutoTune;
+
 #if MODE_FOLLOW_ENABLED
     friend class ModeFollow;
 #endif
@@ -253,6 +255,7 @@ private:
     ModeSteering mode_steering;
     ModeRTL mode_rtl;
     ModeSmartRTL mode_smartrtl;
+    ModeAutoTune mode_autotune;
 #if MODE_FOLLOW_ENABLED
     ModeFollow mode_follow;
 #endif

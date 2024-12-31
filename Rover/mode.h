@@ -27,8 +27,9 @@ public:
         RTL          = 11,
         SMART_RTL    = 12,
         GUIDED       = 15,
-        INITIALISING = 16,
-        // Mode number 30 reserved for "offboard" for external/lua control.
+        INITIALISING = 16,       
+        AUTOTUNE     = 17,
+       // Mode number 30 reserved for "offboard" for external/lua control.
     };
 
     // Constructor
@@ -868,6 +869,46 @@ private:
 
     float _initial_heading_cd;  // vehicle heading (in centi-degrees) at moment vehicle was armed
     float _desired_heading_cd;  // latest desired heading (in centi-degrees) from pilot
+};
+
+class ModeAutoTune : public Mode
+{
+public:
+    // need a constructor for parameters
+    ModeAutoTune();
+
+    // Does not allow copies
+    CLASS_NO_COPY(ModeAutoTune);
+
+    // initialise mode
+    bool _enter() override;
+
+    Number mode_number() const override { return Number::AUTOTUNE; }
+    const char *name4() const override { return "AT"; }
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+    // attributes for mavlink system status reporting
+    bool has_manual_input() const override { return true; }
+    bool have_pilot_input();
+
+    static const struct AP_Param::GroupInfo var_info[];
+    
+protected:
+    AP_Int8 enable;
+    AP_Int8 axes;
+    AP_Float strFFRatio;
+    AP_Float strPRatio;     
+    AP_Float strIRatio;
+    AP_Float spdFFRatio;
+    AP_Float spdPRatio;     
+    AP_Float spdIRatio;
+    AP_Int8 autoFilter;
+    AP_Int8 autoSave;
+
+    uint32_t last_pilot_input;
+    uint32_t last_warning;
+    int sw_pos;
+    bool need_restore;
 };
 
 #if MODE_DOCK_ENABLED
