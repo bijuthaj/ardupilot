@@ -1065,6 +1065,11 @@ class ModeAutoTune : public Mode
         bool value;
     };
 
+    struct PACKED param_ext {
+        AP_Param *param;
+        ap_var_type ptype;
+    };
+
 public:
     static const char* axis_names[];
     static const char* param_suffixes[];
@@ -1127,8 +1132,9 @@ protected:
     AP_Int8 rcFunc;
     AP_Int16 *gcs_pid_mask_orig;
     AP_Param *INS_GYRO_FILTER, *GCS_PID_MASK, *RCMAP_ROLL, *RCMAP_THROTTLE;
+    ap_var_type gyro_ptype, gcs_ptype, roll_ptype, throttle_ptype;
 
-    uint32_t last_warning, last_axis_change, last_pilot_input, tune_done_time, ff_last_warning;
+    uint32_t last_warning, last_axis_change, last_pilot_input, tune_done_time, ff_last_warning, last_debug_warning;
     int sw_pos;
     bool need_restore;
     param_rtun parameters[MAX_PARAMS];
@@ -1136,6 +1142,7 @@ protected:
     status_rtun axes_done[2];
     status_rtun filters_done[2];
     status_rtun gcs_pid_mask_done[2];
+    param_ext param_extras[5];
 
     size_t param_count;
 

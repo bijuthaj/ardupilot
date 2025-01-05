@@ -6,9 +6,12 @@
 #define FLTD_MUL  0.5                //ATC_STR_RAT_FLTD set to 0.5 * INS_GYRO_FILTER
 #define FLTT_MUL  0.5                // ATC_STR_RAT_FLTT set to 0.5 * INS_GYRO_FILTER
 #define STR_RAT_FF_TURNRATE_MIN  10   // steering rate feedforward min vehicle turn rate (in radians/sec)
-#define STR_RAT_FF_STEERING_MIN 0.10            // steering rate feedforward min steering output (in the range 0 to 1)
+#define STR_RAT_FF_STEERING_MIN 0.10  // steering rate feedforward min steering output (in the range 0 to 1)
 #define SPEED_FF_SPEED_MIN  0.5      // speed feedforward minimum vehicle speed (in m/s)
 #define SPEED_FF_THROTTLE_MIN  0.20  // speed feedforward requires throttle output (in the range 0 to 1)
+
+#define DEBUG_FREQ_FAST 1
+#define DEBUG_FREQ_SLOW 300
 
 const AP_Param::GroupInfo ModeAutoTune::var_info[] = {
 
@@ -112,20 +115,21 @@ bool ModeAutoTune::_enter()
     reset_axes_done();
     get_all_params();
     printParameters();
-    enum ap_var_type ptype;
+   
     //backup GCS_PID_MASK to value before tuning
-    gcs_pid_mask_orig = (AP_Int16 *) AP_Param::find("GCS_PID_MASK", &ptype);
+    gcs_pid_mask_orig = (AP_Int16 *) AP_Param::find("GCS_PID_MASK", &gcs_ptype);
 
-    //other vehicle parameters used by this script
-    INS_GYRO_FILTER = AP_Param::find("INS_GYRO_FILTER", &ptype);
-    GCS_PID_MASK = AP_Param::find("GCS_PID_MASK", &ptype);
-    RCMAP_ROLL = AP_Param::find("RCMAP_ROLL", &ptype);
-    RCMAP_THROTTLE= AP_Param::find("RCMAP_THROTTLE", &ptype);
+    //other vehicle parameters used by this script    
+    INS_GYRO_FILTER = AP_Param::find("INS_GYRO_FILTER", &gyro_ptype);
+    GCS_PID_MASK = AP_Param::find("GCS_PID_MASK", &gcs_ptype);
+    RCMAP_ROLL = AP_Param::find("RCMAP_ROLL", &roll_ptype);
+    RCMAP_THROTTLE= AP_Param::find("RCMAP_THROTTLE", &throttle_ptype);
 
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Rover quicktune loaded");
 
     //For testing
     sw_pos = 1;
+    last_debug_warning = 0.0f;
 
     return true;
 }
@@ -134,6 +138,15 @@ void ModeAutoTune::update()
 {
     //printf("in ModeAutoTune:strFFRatio at %f\n", strFFRatio.get());
     //DEV_PRINTF("In ModeAutoTune update");
+
+    //For debug
+    last_debug_warning++;
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD");
+        //last_warning = get_time();
+    }
 
     // Exit immediately if not enabled
     if (enable <= 0) {
@@ -144,10 +157,27 @@ void ModeAutoTune::update()
         last_pilot_input = get_time();
     }
 
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD->2");
+        //last_warning = get_time();
+    }
+
     float steering_out, throttle_out;
     get_steering_and_throttle(steering_out, throttle_out);
 
-    DEV_PRINTF("Reaching here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, steering_out, rover.arming.is_armed());
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Starting here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
+        //last_warning = get_time();
+    }
+
+    // If steering or throttle out of range return
+    if(fabs(steering_out) > 1 || fabs(throttle_out) >1) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: Steering or Throttle out of range");
+        last_warning = get_time();
+        return;
+    }
 
     // Check switch position (0: low, 1: middle, 2: high)
     if (sw_pos == 1 && (!rover.arming.is_armed() || !rover.g2.motors.active()) && get_time() > last_warning + 5) {
@@ -155,7 +185,7 @@ void ModeAutoTune::update()
         last_warning = get_time();
         return;
     }
-    
+
     if (sw_pos == 0 || !rover.arming.is_armed()) {
         // Abort and revert parameters
         if (need_restore) {
@@ -187,8 +217,14 @@ void ModeAutoTune::update()
     if (get_time() - last_axis_change < AXIS_CHANGE_DELAY) {
         return;
     }
+
     // Get the current axis being tuned
     const char* axis = get_current_axis();
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting axis.. AXIS NAME=%s",axis);
+    }
 
     // If no axis is being tuned, check auto-save
     if (axis == nullptr ) {
@@ -207,50 +243,74 @@ void ModeAutoTune::update()
         get_all_params();
     }
 
-    // Return immediately if pilot has provided input recently
-    /* if (get_time() - last_pilot_input < PILOT_INPUT_DELAY) {
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Return immediately if pilot has provided input recently");
+    }
+
+    /* // Return immediately if pilot has provided input recently
+    if (get_time() - last_pilot_input < PILOT_INPUT_DELAY) {
         return;
     } */
 
 
-
-    char message[100];
     // Check if filters have been set for this axis
     for (size_t i = 0; i < sizeof(filters_done) / sizeof(filters_done[0]); ++i) {
-        DEV_PRINTF("Filter done name:%s and status:%s", filters_done[i].name, filters_done[i].value?"true": "false");
+        //For debug
+        if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters Done->Axis:%s, Name:%s, Value:%d\n",axis, 
+            filters_done[i].name, filters_done[i].value);
+        }
+
         if(strcmp(filters_done[i].name, axis) == 0 && !filters_done[i].value) {
             GCS_SEND_TEXT(MAV_SEVERITY_INFO,"RTun: starting %s tune", axis);
+            last_warning = get_time();
             setup_filters(axis);
         }
     }
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters setup -> DONE");
+    }
+
+   
     for (size_t i = 0; i < sizeof(gcs_pid_mask_done) / sizeof(gcs_pid_mask_done[0]); ++i) {
-        // Check if GCS_PID_MASK has been set for this axis
-        if (strcmp(gcs_pid_mask_done[i].name, axis) == 0 &&!gcs_pid_mask_done[i].value) {
-            setup_gcs_pid_mask(axis);
-        }
+       // Check if GCS_PID_MASK has been set for this axis
+       if (strcmp(gcs_pid_mask_done[i].name, axis) == 0 &&!gcs_pid_mask_done[i].value) {
+           setup_gcs_pid_mask(axis);
+       }
     }
 
     char pname[AP_MAX_NAME_SIZE];
     snprintf(pname, sizeof(pname), "%s_FF", axis);
 
+    //For debug
+    if(get_time() > last_warning + 5) {
+       GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting param.. PARAM NAME=%s",pname);
+       last_warning = get_time();
+    }
+
+
+    char message[100];
     // Feedforward tuning
     bool ff_done = false;
     if (strcmp(axis,"ATC_STR_RAT") == 0) {
-        ff_done = update_steering_ff(pname);
+       ff_done = update_steering_ff(pname);
     } else if (strcmp(axis,"ATC_SPEED") == 0) {
-        ff_done = update_speed_ff(pname);
+       ff_done = update_speed_ff(pname);
     } else {
-        snprintf(message, sizeof(message), "RTun: unsupported FF tuning %s", pname);
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
-        ff_done = true;
+       snprintf(message, sizeof(message), "RTun: unsupported FF tuning %s", pname);
+       GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
+       ff_done = true;
     }
 
     if (ff_done) {
-        snprintf(message, sizeof(message), "RTun: %s tuning done", pname);
-        GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "%s", message);
-        advance_axis(axis);
+       snprintf(message, sizeof(message), "RTun: %s tuning done", pname);
+       GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "%s", message);
+       advance_axis(axis);
     }
-
+   
 }
 
 //move to next axis of tune
@@ -286,6 +346,8 @@ bool ModeAutoTune::update_steering_ff(const char* ff_pname) {
     // Get steering and turn rate
     float steering_out, throttle_out;
     get_steering_and_throttle(steering_out, throttle_out);
+    GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Reaching here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
+
     float turn_rate_rads = fabsf(ahrs.get_gyro().z);
 
     // Update user every 5 seconds
@@ -482,9 +544,9 @@ void ModeAutoTune::replace_substring(char* str, const char* old_sub, const char*
 //setup GCS_PID_MASK to provide real-time PID info to GCS during tuning
 void ModeAutoTune::setup_gcs_pid_mask(const char* axis) {
     if (strcmp(axis, "ATC_STR_RAT") == 0) {
-        GCS_PID_MASK->set_float(1, ap_var_type::AP_PARAM_INT8);
+        GCS_PID_MASK->set_float(1, gcs_ptype);
     } else if (strcmp(axis, "ATC_SPEED") == 0) {
-        GCS_PID_MASK->set_float(2, ap_var_type::AP_PARAM_INT8);
+        GCS_PID_MASK->set_float(2, gcs_ptype);
     } else {
         char message[100];
         snprintf(message, sizeof(message), "RTun: setup_gcs_pid_mask received unhandled axis %s", axis);
@@ -502,17 +564,32 @@ void ModeAutoTune::setup_gcs_pid_mask(const char* axis) {
 
 // Function to set up filter frequencies for a specific axis
 void ModeAutoTune::setup_filters(const char* axis) {
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter setup_filters");
+    }
+
     if (autoFilter > 0) {
         if (strcmp(axis, "ATC_STR_RAT") == 0) {
             // Adjust the FLTT filter
             char fltt_param_name[AP_MAX_NAME_SIZE];
             snprintf(fltt_param_name, sizeof(fltt_param_name), "%s_FLTT", axis);
-            adjust_gain(fltt_param_name, INS_GYRO_FILTER->cast_to_float(ap_var_type::AP_PARAM_FLOAT) * FLTT_MUL);
+
+            //For debug
+            if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "fltt_param_name->%s\n", fltt_param_name);
+                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "INS_GYRO_FILTER->%f\n", INS_GYRO_FILTER->cast_to_float(gyro_ptype));
+            }
+
+
+            //Commenting for debug
+            adjust_gain(fltt_param_name, INS_GYRO_FILTER->cast_to_float(gyro_ptype) * FLTT_MUL);
 
             // Adjust the FLTD filter
             char fltd_param_name[AP_MAX_NAME_SIZE];
             snprintf(fltd_param_name, sizeof(fltd_param_name), "%s_FLTD", axis);
-            adjust_gain(fltd_param_name, INS_GYRO_FILTER->cast_to_float(ap_var_type::AP_PARAM_FLOAT) * FLTD_MUL);
+            adjust_gain(fltd_param_name, INS_GYRO_FILTER->cast_to_float(gyro_ptype) * FLTD_MUL);
         }
     }
 
@@ -520,23 +597,41 @@ void ModeAutoTune::setup_filters(const char* axis) {
     for (size_t i = 0; i < sizeof(axis_names)/sizeof(axis_names[0]); ++i) {
         if (strcmp(axis_names[i], axis) == 0) {
             strncpy(filters_done[i].name, axis, AP_MAX_NAME_SIZE);
+            //Commenting below line for debug
             filters_done[i].value = true;
             break;
         }
+    }
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Exit setup_filters");
     }
 }
 
 // Function to adjust a gain, log, and notify the user
 void ModeAutoTune::adjust_gain(const char* pname, float value) {
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter adjust_gain. PNAME:%s, VALUE:%f\n", pname, value);        
+    }
+
+    
     enum ap_var_type ptype;
-    AP_Param* param = AP_Param::find(pname, &ptype); // Find the parameter
+    AP_Param* param = AP_Param::find(pname, &ptype); 
     if (param == nullptr) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: parameter not found");
         return;
     }
 
-    // Get the current value of the parameter
-    float old_value = param->cast_to_float(ap_var_type::AP_PARAM_FLOAT);
+
+     // Get the current value of the parameter
+    float old_value = param->cast_to_float(ptype);
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Current value. PNAME:%s, CURR VAL:%f\n", pname, old_value);        
+    }
+    
     if (fabsf(old_value - 0.0f) < 1e-6) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: unable to read parameter value");
         return;
@@ -556,14 +651,21 @@ void ModeAutoTune::adjust_gain(const char* pname, float value) {
 
     // Log the change
     // printf("Parameter change logged for %s\n", pname);
-    DEV_PRINTF("Parameter change logged for %s\n", pname);
     // printf("RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
-    DEV_PRINTF("RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Parameter change logged for %s\n", pname);
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+    }
 
     // Notify the user via GCS
-    char message[100];
-    snprintf(message, sizeof(message), "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "%s", message);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Exit adjust_gain");
+    }
 }
 
 float ModeAutoTune::get_time() {
@@ -585,7 +687,7 @@ const char* ModeAutoTune::get_current_axis() {
 }
 
 void ModeAutoTune::restore_gcs_pid_mask() {
-    GCS_PID_MASK->set_float(gcs_pid_mask_orig->get(), ap_var_type::AP_PARAM_INT32);
+    GCS_PID_MASK->set_float(gcs_pid_mask_orig->get(), gcs_ptype);
 }
 
 //check for pilot input to pause tune
@@ -743,8 +845,8 @@ void ModeAutoTune::init_speed_ff() {
 // get steering and throttle (-1 to +1) (for use by scripting.)
 bool ModeAutoTune::get_steering_and_throttle(float& steering, float& throttle)
 {
-   
-    //steering = rover.channel_steer->get_control_in()/ 4500.0; 
+
+    //steering = rover.channel_steer->get_control_in()/ 4500.0;
     //throttle = rover.channel_throttle->get_control_in() * 0.01;
     steering = rover.g2.motors.get_steering() / 4500.0;
     throttle = rover.g2.motors.get_throttle() * 0.01;
