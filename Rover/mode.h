@@ -2,6 +2,8 @@
 
 #include "Rover.h"
 
+
+
 // pre-define ModeRTL so Auto can appear higher in this file
 class ModeRTL;
 
@@ -1115,10 +1117,18 @@ public:
     void advance_axis(const char* axis);
     void init_steering_ff();
     void init_speed_ff();
+    void update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag);
 
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:
+    // Low, Mid and High must be in the same positions as they are in RC_Channel::AuxSwitchPos
+    enum class SwitchPos : uint8_t {
+        LOW,
+        MID,
+        HIGH,
+        NONE,
+    };
     AP_Int8 enable;
     AP_Int8 axes;
     AP_Float strFFRatio;
@@ -1135,7 +1145,10 @@ protected:
     ap_var_type gyro_ptype, gcs_ptype, roll_ptype, throttle_ptype;
 
     uint32_t last_warning, last_axis_change, last_pilot_input, tune_done_time, ff_last_warning, last_debug_warning;
-    int sw_pos;
+    //int sw_pos;
+    SwitchPos sw_pos; //Switch pos to be set by aux func
+    SwitchPos sw_pos_tune;
+    SwitchPos sw_pos_save;
     bool need_restore;
     param_rtun parameters[MAX_PARAMS];
     param_saved param_saved[MAX_PARAMS];
@@ -1143,7 +1156,8 @@ protected:
     status_rtun filters_done[2];
     status_rtun gcs_pid_mask_done[2];
     param_ext param_extras[5];
-
+    bool init_done;
+    
     size_t param_count;
 
     // feed forward tuning related local variables
@@ -1153,10 +1167,13 @@ protected:
     float ff_steering_sum = 0;               // total steering input recorded during steering rate FF tuning (divided by count to calc average)
     float ff_turn_rate_sum = 0;              // total turn rate recorded during steering rate FF tuning (divided by count to calc average)
     float ff_turn_rate_count = 0;            // number of steering and turn rate samples taken during FF tuning
-    
+
     void replace_substring(char* str, const char* old_sub, const char* new_sub);
     bool get_steering_and_throttle(float& steering, float& throttle);
     int snprintf(char* str, size_t size, const char *format, ...) const;
+    
+
+
 };
 
 #if MODE_DOCK_ENABLED

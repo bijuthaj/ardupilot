@@ -413,6 +413,10 @@ private:
     bool get_wp_bearing_deg(float &bearing) const override;
     bool get_wp_crosstrack_error_m(float &xtrack_error) const override;
 
+#if AP_RANGEFINDER_ENABLED
+    void update_quicktune(void);
+#endif
+
     enum class FailsafeAction: int8_t {
         None          = 0,
         RTL           = 1,

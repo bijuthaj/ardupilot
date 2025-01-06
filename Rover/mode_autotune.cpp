@@ -115,11 +115,11 @@ bool ModeAutoTune::_enter()
     reset_axes_done();
     get_all_params();
     printParameters();
-   
+
     //backup GCS_PID_MASK to value before tuning
     gcs_pid_mask_orig = (AP_Int16 *) AP_Param::find("GCS_PID_MASK", &gcs_ptype);
 
-    //other vehicle parameters used by this script    
+    //other vehicle parameters used by this script
     INS_GYRO_FILTER = AP_Param::find("INS_GYRO_FILTER", &gyro_ptype);
     GCS_PID_MASK = AP_Param::find("GCS_PID_MASK", &gcs_ptype);
     RCMAP_ROLL = AP_Param::find("RCMAP_ROLL", &roll_ptype);
@@ -127,8 +127,11 @@ bool ModeAutoTune::_enter()
 
     GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Rover quicktune loaded");
 
+    sw_pos_tune = SwitchPos::MID;
+    sw_pos_save = SwitchPos::HIGH;
+
     //For testing
-    sw_pos = 1;
+    //sw_pos = SwitchPos::MID;
     last_debug_warning = 0.0f;
 
     return true;
@@ -139,17 +142,46 @@ void ModeAutoTune::update()
     //printf("in ModeAutoTune:strFFRatio at %f\n", strFFRatio.get());
     //DEV_PRINTF("In ModeAutoTune update");
 
+    
     //For debug
     last_debug_warning++;
 
     //For debug
     if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD");
+        char *pos;
+        switch(sw_pos) {
+        case SwitchPos::LOW:
+            pos = "LOW";
+            break;
+        case SwitchPos::MID:
+            pos = "MID";
+            break;
+        case SwitchPos::HIGH:
+            pos = "HIGH";
+            break;
+        case SwitchPos::NONE:
+            pos = "NONE";
+            break;
+        }
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD: Sw Pos:%s", pos);
         //last_warning = get_time();
     }
 
     // Exit immediately if not enabled
     if (enable <= 0) {
+        return;
+    }
+
+    if (sw_pos == SwitchPos::LOW || !rover.arming.is_armed()) {
+        // Abort and revert parameters
+        if (need_restore) {
+            need_restore = false;
+            restore_all_params();
+            //Restore gcs pid mask;
+            restore_gcs_pid_mask();
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: gains reverted");
+        }
+        reset_axes_done();
         return;
     }
 
@@ -161,6 +193,11 @@ void ModeAutoTune::update()
     if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD->2");
         //last_warning = get_time();
+    }
+
+    if(!init_done) {
+        enter();
+        init_done = true;
     }
 
     float steering_out, throttle_out;
@@ -180,26 +217,15 @@ void ModeAutoTune::update()
     }
 
     // Check switch position (0: low, 1: middle, 2: high)
-    if (sw_pos == 1 && (!rover.arming.is_armed() || !rover.g2.motors.active()) && get_time() > last_warning + 5) {
+    if (sw_pos == sw_pos_tune && (!rover.arming.is_armed() || !rover.g2.motors.active()) && get_time() > last_warning + 5) {
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: must be armed and moving to tune");
         last_warning = get_time();
         return;
     }
 
-    if (sw_pos == 0 || !rover.arming.is_armed()) {
-        // Abort and revert parameters
-        if (need_restore) {
-            need_restore = false;
-            restore_all_params();
-            //Restore gcs pid mask;
-            restore_gcs_pid_mask();
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: gains reverted");
-        }
-        reset_axes_done();
-        return;
-    }
+    
 
-    if (sw_pos == 2) {
+    if (sw_pos == sw_pos_save) {
         // Save all parameters
         if (need_restore) {
             need_restore = false;
@@ -209,7 +235,7 @@ void ModeAutoTune::update()
     }
 
     // If not in tuning mode, exit
-    if (sw_pos != 1) {
+    if (sw_pos != sw_pos_tune) {
         return;
     }
 
@@ -220,11 +246,7 @@ void ModeAutoTune::update()
 
     // Get the current axis being tuned
     const char* axis = get_current_axis();
-
-    //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting axis.. AXIS NAME=%s",axis);
-    }
+  
 
     // If no axis is being tuned, check auto-save
     if (axis == nullptr ) {
@@ -238,6 +260,11 @@ void ModeAutoTune::update()
         }
         return;
     }
+    //For debug
+    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting axis.. AXIS NAME=%s",axis);
+    }
+
     if (!need_restore) {
         // Just starting tuning, get current values
         get_all_params();
@@ -258,8 +285,8 @@ void ModeAutoTune::update()
     for (size_t i = 0; i < sizeof(filters_done) / sizeof(filters_done[0]); ++i) {
         //For debug
         if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters Done->Axis:%s, Name:%s, Value:%d\n",axis, 
-            filters_done[i].name, filters_done[i].value);
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters Done->Axis:%s, Name:%s, Value:%d\n",axis,
+                          filters_done[i].name, filters_done[i].value);
         }
 
         if(strcmp(filters_done[i].name, axis) == 0 && !filters_done[i].value) {
@@ -274,12 +301,12 @@ void ModeAutoTune::update()
         GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters setup -> DONE");
     }
 
-   
+
     for (size_t i = 0; i < sizeof(gcs_pid_mask_done) / sizeof(gcs_pid_mask_done[0]); ++i) {
-       // Check if GCS_PID_MASK has been set for this axis
-       if (strcmp(gcs_pid_mask_done[i].name, axis) == 0 &&!gcs_pid_mask_done[i].value) {
-           setup_gcs_pid_mask(axis);
-       }
+        // Check if GCS_PID_MASK has been set for this axis
+        if (strcmp(gcs_pid_mask_done[i].name, axis) == 0 &&!gcs_pid_mask_done[i].value) {
+            setup_gcs_pid_mask(axis);
+        }
     }
 
     char pname[AP_MAX_NAME_SIZE];
@@ -287,8 +314,8 @@ void ModeAutoTune::update()
 
     //For debug
     if(get_time() > last_warning + 5) {
-       GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting param.. PARAM NAME=%s",pname);
-       last_warning = get_time();
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting param.. PARAM NAME=%s",pname);
+        last_warning = get_time();
     }
 
 
@@ -296,21 +323,21 @@ void ModeAutoTune::update()
     // Feedforward tuning
     bool ff_done = false;
     if (strcmp(axis,"ATC_STR_RAT") == 0) {
-       ff_done = update_steering_ff(pname);
+        ff_done = update_steering_ff(pname);
     } else if (strcmp(axis,"ATC_SPEED") == 0) {
-       ff_done = update_speed_ff(pname);
+        ff_done = update_speed_ff(pname);
     } else {
-       snprintf(message, sizeof(message), "RTun: unsupported FF tuning %s", pname);
-       GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
-       ff_done = true;
+        snprintf(message, sizeof(message), "RTun: unsupported FF tuning %s", pname);
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
+        ff_done = true;
     }
 
     if (ff_done) {
-       snprintf(message, sizeof(message), "RTun: %s tuning done", pname);
-       GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "%s", message);
-       advance_axis(axis);
+        snprintf(message, sizeof(message), "RTun: %s tuning done", pname);
+        GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "%s", message);
+        advance_axis(axis);
     }
-   
+
 }
 
 //move to next axis of tune
@@ -613,25 +640,25 @@ void ModeAutoTune::setup_filters(const char* axis) {
 void ModeAutoTune::adjust_gain(const char* pname, float value) {
     //For debug
     if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter adjust_gain. PNAME:%s, VALUE:%f\n", pname, value);        
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter adjust_gain. PNAME:%s, VALUE:%f\n", pname, value);
     }
 
-    
+
     enum ap_var_type ptype;
-    AP_Param* param = AP_Param::find(pname, &ptype); 
+    AP_Param* param = AP_Param::find(pname, &ptype);
     if (param == nullptr) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: parameter not found");
         return;
     }
 
 
-     // Get the current value of the parameter
+    // Get the current value of the parameter
     float old_value = param->cast_to_float(ptype);
     //For debug
     if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Current value. PNAME:%s, CURR VAL:%f\n", pname, old_value);        
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Current value. PNAME:%s, CURR VAL:%f\n", pname, old_value);
     }
-    
+
     if (fabsf(old_value - 0.0f) < 1e-6) {
         GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: unable to read parameter value");
         return;
@@ -650,8 +677,8 @@ void ModeAutoTune::adjust_gain(const char* pname, float value) {
     }
 
     // Log the change
-    // printf("Parameter change logged for %s\n", pname);
-    // printf("RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+    printf("Parameter change logged for %s\n", pname);
+    printf("RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
 
     //For debug
     if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
@@ -694,8 +721,17 @@ void ModeAutoTune::restore_gcs_pid_mask() {
 bool ModeAutoTune::have_pilot_input() {
     //channel_roll = rc().find_channel_for_option(RC_Channel::AUX_FUNC::ROLL);
     //channel_throttle = rc().find_channel_for_option(RC_Channel::AUX_FUNC::THROTTLE);
-    if( (channel_roll != nullptr && fabsf(channel_roll->norm_input_dz()) > 0 )
-            || (channel_throttle != nullptr && fabsf(channel_throttle->norm_input_dz()) > 0) ) {
+    // if( (channel_roll != nullptr && fabsf(channel_roll->norm_input_dz()) > 0 )
+    //         || (channel_throttle != nullptr && fabsf(channel_throttle->norm_input_dz()) > 0) ) {
+    //     return true;
+    // }
+    // return false;
+
+    auto &RC = rc();
+    const float roll = RC.get_roll_channel().norm_input_dz();
+    const float throttle = RC.get_throttle_channel().norm_input_dz();
+
+    if (fabsf(roll) > 0 || fabsf(throttle) > 0) {
         return true;
     }
     return false;
@@ -740,7 +776,7 @@ void ModeAutoTune::addParameter(const char *name, const char *axis) {
         parameters[param_count].ptype = ptype;
         param_count++;
     } else {
-        //printf("Parameter %s not found in ArduPilot\n", name);
+        printf("Parameter %s not found in ArduPilot\n", name);
     }
 }
 
@@ -780,7 +816,7 @@ void ModeAutoTune::save_all_params() {
             strncpy(param_saved[i].name, parameters[i].name, AP_MAX_NAME_SIZE);
             param_saved[i].value = current_value;
             parameters[i].changed = false;
-            // printf("Saved Parameter: %s with Value: %f\n", parameters[i].name, current_value);
+            printf("Saved Parameter: %s with Value: %f\n", parameters[i].name, current_value);
         }
     }
     gcs().send_text(MAV_SEVERITY_NOTICE, "RTun: tuning gains saved");
@@ -860,4 +896,9 @@ int ModeAutoTune::snprintf(char* str, size_t size, const char *format, ...) cons
     int res = hal.util->vsnprintf(str, size, format, ap);
     va_end(ap);
     return res;
+}
+
+void ModeAutoTune::update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag)
+{
+    sw_pos = SwitchPos(ch_flag);
 }
