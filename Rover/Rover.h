@@ -73,6 +73,9 @@
 #include "RC_Channel_Rover.h"                  // RC Channel Library
 
 #include "mode.h"
+#if AP_QUICKTUNE_ENABLED
+#include "AP_Quicktune_Rover.h"
+#endif
 
 class Rover : public AP_Vehicle {
 public:
@@ -100,6 +103,7 @@ public:
     friend class ModeRTL;
     friend class ModeSmartRTL;
     friend class ModeAutoTune;
+    friend class AP_Quicktune_Rover;
 
 #if MODE_FOLLOW_ENABLED
     friend class ModeFollow;
@@ -167,17 +171,21 @@ private:
 #endif
     // GCS handling
     GCS_Rover _gcs;  // avoid using this; use gcs()
-    GCS_Rover &gcs() { return _gcs; }
+    GCS_Rover &gcs() {
+        return _gcs;
+    }
 
     // RC Channels:
-    RC_Channels_Rover &rc() { return g2.rc_channels; }
+    RC_Channels_Rover &rc() {
+        return g2.rc_channels;
+    }
 
     // The rover's current location
     Location current_loc;
 
     // Camera
 #if AP_CAMERA_ENABLED
-    AP_Camera camera{MASK_LOG_CAMERA};
+    AP_Camera camera {MASK_LOG_CAMERA};
 #endif
 
     // Camera/Antenna mount tracking and stabilisation stuff
@@ -219,8 +227,8 @@ private:
 
     // Battery Sensors
     AP_BattMonitor battery{MASK_LOG_CURRENT,
-                           FUNCTOR_BIND_MEMBER(&Rover::handle_battery_failsafe, void, const char*, const int8_t),
-                           _failsafe_priorities};
+                       FUNCTOR_BIND_MEMBER(&Rover::handle_battery_failsafe, void, const char*, const int8_t),
+                       _failsafe_priorities};
 
     // flyforward timer
     uint32_t flyforward_start_ms;
@@ -256,6 +264,7 @@ private:
     ModeRTL mode_rtl;
     ModeSmartRTL mode_smartrtl;
     ModeAutoTune mode_autotune;
+    AP_Quicktune_Rover quick_tune;
 #if MODE_FOLLOW_ENABLED
     ModeFollow mode_follow;
 #endif
@@ -337,7 +346,9 @@ private:
 
 #if HAL_LOGGING_ENABLED
     // methods for AP_Vehicle:
-    const AP_Int32 &get_log_bitmask() override { return g.log_bitmask; }
+    const AP_Int32 &get_log_bitmask() override {
+        return g.log_bitmask;
+    }
     const struct LogStructure *get_log_structures() const override {
         return log_structure;
     }
@@ -397,7 +408,9 @@ private:
     bool set_mode(Mode &new_mode, ModeReason reason);
     bool set_mode(const uint8_t new_mode, ModeReason reason) override;
     bool set_mode(Mode::Number new_mode, ModeReason reason);
-    uint8_t get_mode() const override { return (uint8_t)control_mode->mode_number(); }
+    uint8_t get_mode() const override {
+        return (uint8_t)control_mode->mode_number();
+    }
     bool current_mode_requires_mission() const override {
         return control_mode == &mode_auto;
     }
@@ -431,14 +444,14 @@ private:
     };
 
     static constexpr int8_t _failsafe_priorities[] = {
-                                                       (int8_t)FailsafeAction::Terminate,
-                                                       (int8_t)FailsafeAction::Hold,
-                                                       (int8_t)FailsafeAction::RTL,
-                                                       (int8_t)FailsafeAction::SmartRTL_Hold,
-                                                       (int8_t)FailsafeAction::SmartRTL,
-                                                       (int8_t)FailsafeAction::None,
-                                                       -1 // the priority list must end with a sentinel of -1
-                                                      };
+        (int8_t)FailsafeAction::Terminate,
+        (int8_t)FailsafeAction::Hold,
+        (int8_t)FailsafeAction::RTL,
+        (int8_t)FailsafeAction::SmartRTL_Hold,
+        (int8_t)FailsafeAction::SmartRTL,
+        (int8_t)FailsafeAction::None,
+        -1 // the priority list must end with a sentinel of -1
+    };
     static_assert(_failsafe_priorities[ARRAY_SIZE(_failsafe_priorities) - 1] == -1,
                   "_failsafe_priorities is missing the sentinel");
 
@@ -452,8 +465,12 @@ public:
     void motor_test_stop();
 
     // frame type
-    uint8_t get_frame_type() const { return g2.frame_type.get(); }
-    AP_WheelRateControl& get_wheel_rate_control() { return g2.wheel_rate_control; }
+    uint8_t get_frame_type() const {
+        return g2.frame_type.get();
+    }
+    AP_WheelRateControl& get_wheel_rate_control() {
+        return g2.wheel_rate_control;
+    }
 
     // Simple mode
     float simple_sin_yaw;

@@ -1,5 +1,16 @@
+/*
+  C++ implementation of rover quicktune based on original lua script
+  https://github.com/ArduPilot/ardupilot/blob/master/libraries/AP_Scripting/applets/rover-quicktune.lua
+ */
+
+
+// quicktune is not performance sensitive, save flash
+#pragma GCC optimize("Os")
+
 #include "Rover.h"
 #include "AP_Quicktune_Rover.h"
+
+#if AP_QUICKTUNE_ENABLED
 
 #define UPDATE_RATE_HZ  40           //this script updates at 40hz
 #define AXIS_CHANGE_DELAY  4.0       //delay of 4 seconds between axis to allow vehicle to settle
@@ -105,7 +116,7 @@ const char* AP_Quicktune_Rover::axis_names[] = {"ATC_STR_RAT", "ATC_SPEED"};
 const char* AP_Quicktune_Rover::param_suffixes[] = {"FF", "P", "I", "D", "FLTT", "FLTD", "FLTE"};
 const char* AP_Quicktune_Rover::params_extra[] = {"CRUISE_SPEED", "CRUISE_THROTTLE"};
 
-AP_Quicktune_Rover::AP_Quicktune_Rover() : AP_Quicktune_Rover()
+AP_Quicktune_Rover::AP_Quicktune_Rover()
 {
     AP_Param::setup_object_defaults(this, var_info);
 }
@@ -126,7 +137,7 @@ bool AP_Quicktune_Rover::enter()
     RCMAP_ROLL = AP_Param::find("RCMAP_ROLL", &roll_ptype);
     RCMAP_THROTTLE= AP_Param::find("RCMAP_THROTTLE", &throttle_ptype);
 
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Rover quicktune loaded");
+    gcs().send_text(MAV_SEVERITY_INFO, "Rover quicktune loaded");
 
     sw_pos_tune = SwitchPos::MID;
     sw_pos_save = SwitchPos::HIGH;
@@ -138,35 +149,35 @@ bool AP_Quicktune_Rover::enter()
     return true;
 }
 
-void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
+void AP_Quicktune_Rover::update()
 {
     //printf("in AP_Quicktune_Rover:strFFRatio at %f\n", strFFRatio.get());
     //DEV_PRINTF("In AP_Quicktune_Rover update");
 
-    
+
     //For debug
     last_debug_warning++;
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        char *pos;
-        switch(sw_pos) {
-        case SwitchPos::LOW:
-            pos = "LOW";
-            break;
-        case SwitchPos::MID:
-            pos = "MID";
-            break;
-        case SwitchPos::HIGH:
-            pos = "HIGH";
-            break;
-        case SwitchPos::NONE:
-            pos = "NONE";
-            break;
-        }
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD: Sw Pos:%s", pos);
-        //last_warning = get_time();
-    }
+    /*     if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+            char *pos;
+            switch(sw_pos) {
+            case SwitchPos::LOW:
+                pos = "LOW";
+                break;
+            case SwitchPos::MID:
+                pos = "MID";
+                break;
+            case SwitchPos::HIGH:
+                pos = "HIGH";
+                break;
+            case SwitchPos::NONE:
+                pos = "NONE";
+                break;
+            }
+            gcs().send_text(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD: Sw Pos:%s", pos);
+            //last_warning = get_time();
+        } */
 
     // Exit immediately if not enabled
     if (enable <= 0) {
@@ -180,23 +191,23 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
             restore_all_params();
             //Restore gcs pid mask;
             restore_gcs_pid_mask();
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: gains reverted");
+            gcs().send_text(MAV_SEVERITY_CRITICAL, "RTun: gains reverted");
         }
         reset_axes_done();
         return;
     }
 
-    if(have_pilot_input()) {
+    if (have_pilot_input()) {
         last_pilot_input = get_time();
     }
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD->2");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        //gcs().send_text(MAV_SEVERITY_CRITICAL, "ENTER UPDATE METHOD->2");
         //last_warning = get_time();
     }
 
-    if(!init_done) {
+    if (!init_done) {
         enter();
         init_done = true;
     }
@@ -205,26 +216,26 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
     get_steering_and_throttle(steering_out, throttle_out);
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Starting here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        //gcs().send_text(MAV_SEVERITY_CRITICAL, "Starting here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
         //last_warning = get_time();
     }
 
     // If steering or throttle out of range return
-    if(fabs(steering_out) > 1 || fabs(throttle_out) >1) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: Steering or Throttle out of range");
+    /* if(fabs(steering_out) > 1 || fabs(throttle_out) >1) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "RTun: Steering or Throttle out of range");
         last_warning = get_time();
         return;
-    }
+    } */
 
     // Check switch position (0: low, 1: middle, 2: high)
     if (sw_pos == sw_pos_tune && (!rover.arming.is_armed() || !rover.g2.motors.active()) && get_time() > last_warning + 5) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: must be armed and moving to tune");
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "RTun: must be armed and moving to tune");
         last_warning = get_time();
         return;
     }
 
-    
+
 
     if (sw_pos == sw_pos_save) {
         // Save all parameters
@@ -247,7 +258,7 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
 
     // Get the current axis being tuned
     const char* axis = get_current_axis();
-  
+
 
     // If no axis is being tuned, check auto-save
     if (axis == nullptr ) {
@@ -262,8 +273,8 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
         return;
     }
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting axis.. AXIS NAME=%s",axis);
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Getting axis.. AXIS NAME=%s",axis);
     }
 
     if (!need_restore) {
@@ -272,8 +283,8 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
     }
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Return immediately if pilot has provided input recently");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        //gcs().send_text(MAV_SEVERITY_CRITICAL, "Return immediately if pilot has provided input recently");
     }
 
     /* // Return immediately if pilot has provided input recently
@@ -285,21 +296,21 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
     // Check if filters have been set for this axis
     for (size_t i = 0; i < sizeof(filters_done) / sizeof(filters_done[0]); ++i) {
         //For debug
-        if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters Done->Axis:%s, Name:%s, Value:%d\n",axis,
-                          filters_done[i].name, filters_done[i].value);
+        if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+            //gcs().send_text(MAV_SEVERITY_CRITICAL, "Filters Done->Axis:%s, Name:%s, Value:%d\n",axis,
+            //              filters_done[i].name, filters_done[i].value);
         }
 
-        if(strcmp(filters_done[i].name, axis) == 0 && !filters_done[i].value) {
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO,"RTun: starting %s tune", axis);
+        if (strcmp(filters_done[i].name, axis) == 0 && !filters_done[i].value) {
+            gcs().send_text(MAV_SEVERITY_INFO,"RTun: starting %s tune", axis);
             last_warning = get_time();
             setup_filters(axis);
         }
     }
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Filters setup -> DONE");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        //gcs().send_text(MAV_SEVERITY_CRITICAL, "Filters setup -> DONE");
     }
 
 
@@ -314,8 +325,8 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
     snprintf(pname, sizeof(pname), "%s_FF", axis);
 
     //For debug
-    if(get_time() > last_warning + 5) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Getting param.. PARAM NAME=%s",pname);
+    if (get_time() > last_warning + 5) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Getting param.. PARAM NAME=%s",pname);
         last_warning = get_time();
     }
 
@@ -329,20 +340,21 @@ void AP_Quicktune_Rover::update(bool mode_supports_quicktune)
         ff_done = update_speed_ff(pname);
     } else {
         snprintf(message, sizeof(message), "RTun: unsupported FF tuning %s", pname);
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "%s", message);
         ff_done = true;
     }
 
     if (ff_done) {
         snprintf(message, sizeof(message), "RTun: %s tuning done", pname);
-        GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "%s", message);
+        gcs().send_text(MAV_SEVERITY_NOTICE, "%s", message);
         advance_axis(axis);
     }
 
 }
 
 //move to next axis of tune
-void AP_Quicktune_Rover::advance_axis(const char* axis) {
+void AP_Quicktune_Rover::advance_axis(const char* axis)
+{
     float now_sec = get_time();
 
     // Store the current axis being tuned
@@ -358,7 +370,7 @@ void AP_Quicktune_Rover::advance_axis(const char* axis) {
 
     // Check for tuning completion
     if (prev_axis != nullptr && get_current_axis() == nullptr) {
-        GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "RTun: Tuning DONE");
+        gcs().send_text(MAV_SEVERITY_NOTICE, "RTun: Tuning DONE");
         tune_done_time = now_sec;
     }
 
@@ -370,13 +382,14 @@ void AP_Quicktune_Rover::advance_axis(const char* axis) {
 // run steering turn rate controller feedforward calibration
 // ff_pname is the FF parameter being tuned
 // returns true once the tuning has completed
-bool AP_Quicktune_Rover::update_steering_ff(const char* ff_pname) {
+bool AP_Quicktune_Rover::update_steering_ff(const char* ff_pname)
+{
     // Get steering and turn rate
     float steering_out, throttle_out;
     get_steering_and_throttle(steering_out, throttle_out);
-    GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Reaching here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
+    //gcs().send_text(MAV_SEVERITY_CRITICAL, "Reaching here... Mtr active=%d, steering=%f and throttle=%f, is_armed=%d", rover.g2.motors.active(), steering_out, throttle_out, rover.arming.is_armed());
 
-    float turn_rate_rads = fabsf(ahrs.get_gyro().z);
+    float turn_rate_rads = fabsf(rover.ahrs.get_gyro().z);
 
     // Update user every 5 seconds
     float now_sec = get_time();
@@ -403,7 +416,7 @@ bool AP_Quicktune_Rover::update_steering_ff(const char* ff_pname) {
         if (update_user) {
             char message[80];
             snprintf(message, sizeof(message), "RTun: %s %.0f%% complete", ff_pname, complete_pct);
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "%s", message);
+            gcs().send_text(MAV_SEVERITY_INFO, "%s", message);
         }
     } else {
         if (update_user) {
@@ -413,13 +426,13 @@ bool AP_Quicktune_Rover::update_steering_ff(const char* ff_pname) {
                          "RTun: increase steering (%d%% < %d%%)",
                          static_cast<int>(steering_out * 100),
                          static_cast<int>(STR_RAT_FF_STEERING_MIN * 100));
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "%s", warning);
+                gcs().send_text(MAV_SEVERITY_WARNING, "%s", warning);
             } else if (!turnrate_ok) {
                 snprintf(warning, sizeof(warning),
                          "RTun: increase turn rate (%d deg/s < %d)",
                          static_cast<int>(degrees(std::abs(turn_rate_rads))),
                          static_cast<int>(degrees(STR_RAT_FF_TURNRATE_MIN)));
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "%s", warning);
+                gcs().send_text(MAV_SEVERITY_WARNING, "%s", warning);
             }
         }
     }
@@ -450,7 +463,8 @@ bool AP_Quicktune_Rover::update_steering_ff(const char* ff_pname) {
     return false;
 }
 
-bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname) {
+bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname)
+{
     // Variables to hold throttle and speed
     float throttle_out = 0.0f;
     float speed = 0.0f;
@@ -461,8 +475,8 @@ bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname) {
 
     // Get velocity in NED frame and convert to body frame
     Vector3f velocity_ned;
-    if (ahrs.get_velocity_NED(velocity_ned)) {
-        speed = ahrs.earth_to_body(velocity_ned).x;
+    if (rover.ahrs.get_velocity_NED(velocity_ned)) {
+        speed = rover.ahrs.earth_to_body(velocity_ned).x;
     }
 
     // Update user every 5 seconds
@@ -487,7 +501,7 @@ bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname) {
         if (update_user) {
             char msg[50];
             snprintf(msg, sizeof(msg), "RTun: %s %.0f%% complete", ff_pname, complete_pct);
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO,"%s", msg);
+            gcs().send_text(MAV_SEVERITY_INFO,"%s", msg);
         }
     } else {
         if (update_user) {
@@ -497,13 +511,13 @@ bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname) {
                          "RTun: increase throttle (%d < %d)",
                          static_cast<int>(throttle_out * 100.0f),
                          static_cast<int>(SPEED_FF_THROTTLE_MIN * 100.0f));
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING,"%s", msg);
+                gcs().send_text(MAV_SEVERITY_WARNING,"%s", msg);
             } else if (!speed_ok) {
                 char msg[50];
                 snprintf(msg, sizeof(msg),
                          "RTun: increase speed (%3.1f < %3.1f)",
                          speed, SPEED_FF_SPEED_MIN);
-                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "%s", msg);
+                gcs().send_text(MAV_SEVERITY_WARNING, "%s", msg);
             }
         }
     }
@@ -546,7 +560,8 @@ bool AP_Quicktune_Rover::update_speed_ff(const char* ff_pname) {
 }
 
 // Replace a substring in a char array with another substring
-void AP_Quicktune_Rover::replace_substring(char* str, const char* old_sub, const char* new_sub) {
+void AP_Quicktune_Rover::replace_substring(char* str, const char* old_sub, const char* new_sub)
+{
     char buffer[AP_MAX_NAME_SIZE];
     char* pos = strstr(str, old_sub); // Find the first occurrence of old_sub
     if (!pos) {
@@ -570,7 +585,8 @@ void AP_Quicktune_Rover::replace_substring(char* str, const char* old_sub, const
 }
 
 //setup GCS_PID_MASK to provide real-time PID info to GCS during tuning
-void AP_Quicktune_Rover::setup_gcs_pid_mask(const char* axis) {
+void AP_Quicktune_Rover::setup_gcs_pid_mask(const char* axis)
+{
     if (strcmp(axis, "ATC_STR_RAT") == 0) {
         GCS_PID_MASK->set_float(1, gcs_ptype);
     } else if (strcmp(axis, "ATC_SPEED") == 0) {
@@ -578,7 +594,7 @@ void AP_Quicktune_Rover::setup_gcs_pid_mask(const char* axis) {
     } else {
         char message[100];
         snprintf(message, sizeof(message), "RTun: setup_gcs_pid_mask received unhandled axis %s", axis);
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "%s", message);
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "%s", message);
     }
 
     // Mark the axis as done in gcs_pid_mask_done
@@ -591,11 +607,12 @@ void AP_Quicktune_Rover::setup_gcs_pid_mask(const char* axis) {
 }
 
 // Function to set up filter frequencies for a specific axis
-void AP_Quicktune_Rover::setup_filters(const char* axis) {
+void AP_Quicktune_Rover::setup_filters(const char* axis)
+{
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter setup_filters");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Enter setup_filters");
     }
 
     if (autoFilter > 0) {
@@ -605,9 +622,9 @@ void AP_Quicktune_Rover::setup_filters(const char* axis) {
             snprintf(fltt_param_name, sizeof(fltt_param_name), "%s_FLTT", axis);
 
             //For debug
-            if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "fltt_param_name->%s\n", fltt_param_name);
-                GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "INS_GYRO_FILTER->%f\n", INS_GYRO_FILTER->cast_to_float(gyro_ptype));
+            if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+                gcs().send_text(MAV_SEVERITY_CRITICAL, "fltt_param_name->%s\n", fltt_param_name);
+                gcs().send_text(MAV_SEVERITY_CRITICAL, "INS_GYRO_FILTER->%f\n", INS_GYRO_FILTER->cast_to_float(gyro_ptype));
             }
 
 
@@ -632,23 +649,24 @@ void AP_Quicktune_Rover::setup_filters(const char* axis) {
     }
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Exit setup_filters");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Exit setup_filters");
     }
 }
 
 // Function to adjust a gain, log, and notify the user
-void AP_Quicktune_Rover::adjust_gain(const char* pname, float value) {
+void AP_Quicktune_Rover::adjust_gain(const char* pname, float value)
+{
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Enter adjust_gain. PNAME:%s, VALUE:%f\n", pname, value);
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Enter adjust_gain. PNAME:%s, VALUE:%f\n", pname, value);
     }
 
 
     enum ap_var_type ptype;
     AP_Param* param = AP_Param::find(pname, &ptype);
     if (param == nullptr) {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: parameter not found");
+        gcs().send_text(MAV_SEVERITY_ERROR, "RTun: parameter not found");
         return;
     }
 
@@ -656,12 +674,12 @@ void AP_Quicktune_Rover::adjust_gain(const char* pname, float value) {
     // Get the current value of the parameter
     float old_value = param->cast_to_float(ptype);
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Current value. PNAME:%s, CURR VAL:%f\n", pname, old_value);
+    if ((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Current value. PNAME:%s, CURR VAL:%f\n", pname, old_value);
     }
 
     if (fabsf(old_value - 0.0f) < 1e-6) {
-        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "RTun: unable to read parameter value");
+        gcs().send_text(MAV_SEVERITY_ERROR, "RTun: unable to read parameter value");
         return;
     }
 
@@ -682,27 +700,29 @@ void AP_Quicktune_Rover::adjust_gain(const char* pname, float value) {
     printf("RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Parameter change logged for %s\n", pname);
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+    if ((last_debug_warning % DEBUG_FREQ_FAST) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Parameter change logged for %s\n", pname);
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
     }
-
+    Write_RTUN(value, pname);
     // Notify the user via GCS
-    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
+    gcs().send_text(MAV_SEVERITY_INFO, "RTun: adjusted %s %.3f -> %.3f", pname, old_value, value);
 
     //For debug
-    if((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Exit adjust_gain");
+    if ((last_debug_warning % DEBUG_FREQ_SLOW) == 0) {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Exit adjust_gain");
     }
 }
 
-float AP_Quicktune_Rover::get_time() {
+float AP_Quicktune_Rover::get_time()
+{
     // Get the time in milliseconds and convert it to seconds
     uint32_t millis = AP_HAL::millis();
     return millis * 0.001f;  // Convert milliseconds to seconds
 }
 
-const char* AP_Quicktune_Rover::get_current_axis() {
+const char* AP_Quicktune_Rover::get_current_axis()
+{
     for (size_t i = 0; i < sizeof(axis_names) / sizeof(axis_names[0]); ++i) {
         int mask = (1 << i);  // Generate bitmask for the current axis
         // If the axis is active and not done, return the axis name
@@ -714,12 +734,14 @@ const char* AP_Quicktune_Rover::get_current_axis() {
     return nullptr;  // Return nullptr if all axes are done
 }
 
-void AP_Quicktune_Rover::restore_gcs_pid_mask() {
+void AP_Quicktune_Rover::restore_gcs_pid_mask()
+{
     GCS_PID_MASK->set_float(gcs_pid_mask_orig->get(), gcs_ptype);
 }
 
 //check for pilot input to pause tune
-bool AP_Quicktune_Rover::have_pilot_input() {
+bool AP_Quicktune_Rover::have_pilot_input()
+{
     //channel_roll = rc().find_channel_for_option(RC_Channel::AUX_FUNC::ROLL);
     //channel_throttle = rc().find_channel_for_option(RC_Channel::AUX_FUNC::THROTTLE);
     // if( (channel_roll != nullptr && fabsf(channel_roll->norm_input_dz()) > 0 )
@@ -739,7 +761,8 @@ bool AP_Quicktune_Rover::have_pilot_input() {
 }
 
 // Initialize parameter tables
-void AP_Quicktune_Rover::init_params_tables() {
+void AP_Quicktune_Rover::init_params_tables()
+{
     // Combine axis names with suffixes to create parameter names
     for (const char *axis : axis_names) {
         for (const char *suffix : param_suffixes) {
@@ -756,7 +779,8 @@ void AP_Quicktune_Rover::init_params_tables() {
     }
 }
 
-void AP_Quicktune_Rover::addParameter(const char *name, const char *axis) {
+void AP_Quicktune_Rover::addParameter(const char *name, const char *axis)
+{
     if (param_count >= MAX_PARAMS) {
         //printf("Parameter storage full, cannot add %s\n", name);
         return;
@@ -782,7 +806,8 @@ void AP_Quicktune_Rover::addParameter(const char *name, const char *axis) {
 }
 
 //get all current param values into param_saved dictionary
-void AP_Quicktune_Rover::get_all_params() {
+void AP_Quicktune_Rover::get_all_params()
+{
     for (size_t i = 0; i < sizeof(parameters)/sizeof(parameters[0]) ; ++i) {
         if (parameters[i].param != nullptr) {
             float current_value = parameters[i].param->cast_to_float(parameters[i].ptype);
@@ -796,7 +821,8 @@ void AP_Quicktune_Rover::get_all_params() {
 }
 
 //restore all param values from param_saved dictionary
-void AP_Quicktune_Rover::restore_all_params() {
+void AP_Quicktune_Rover::restore_all_params()
+{
     for (size_t i = 0; i < sizeof(parameters)/sizeof(parameters[0]); ++i) {
         if (parameters[i].changed) {
             float saved_value = param_saved[i].value;
@@ -808,7 +834,8 @@ void AP_Quicktune_Rover::restore_all_params() {
 }
 
 // save all param values to storage
-void AP_Quicktune_Rover::save_all_params() {
+void AP_Quicktune_Rover::save_all_params()
+{
     for (size_t i = 0; i < sizeof(parameters)/sizeof(parameters[0]); ++i) {
         if (parameters[i].changed) {
             float current_value = parameters[i].param->cast_to_float(parameters[i].ptype);
@@ -823,7 +850,8 @@ void AP_Quicktune_Rover::save_all_params() {
     gcs().send_text(MAV_SEVERITY_NOTICE, "RTun: tuning gains saved");
 }
 
-void AP_Quicktune_Rover::printParameters() const {
+void AP_Quicktune_Rover::printParameters() const
+{
     /* for (size_t i = 0; i < sizeof(parameters)/sizeof(parameters[0]); i++) {
         float value = parameters[i].param->cast_to_float(parameters[i].ptype);
         printf("Parameter: %s, Value: %f, Axis: %s, Changed: %s\n",
@@ -836,7 +864,8 @@ void AP_Quicktune_Rover::printParameters() const {
 
 
 // Function to reset all axis states
-void AP_Quicktune_Rover::reset_axes_done() {
+void AP_Quicktune_Rover::reset_axes_done()
+{
     // Iterate over all axis names and reset their associated states
     for (size_t i = 0; i < sizeof(axis_names) / sizeof(axis_names[0]); ++i) {
         const char* axis = axis_names[i];
@@ -865,14 +894,16 @@ void AP_Quicktune_Rover::reset_axes_done() {
 }
 
 // initialise steering ff tuning
-void AP_Quicktune_Rover::init_steering_ff() {
+void AP_Quicktune_Rover::init_steering_ff()
+{
     ff_steering_sum = 0;
     ff_turn_rate_sum = 0;
     ff_turn_rate_count = 0;
 }
 
 //initialise speed ff tuning
-void AP_Quicktune_Rover::init_speed_ff() {
+void AP_Quicktune_Rover::init_speed_ff()
+{
     ff_throttle_sum = 0;
     ff_speed_sum = 0;
     ff_speed_count = 0;
@@ -899,8 +930,40 @@ int AP_Quicktune_Rover::snprintf(char* str, size_t size, const char *format, ...
     return res;
 }
 
-/* void AP_Quicktune_Rover::update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag)
+void AP_Quicktune_Rover::update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag)
 {
     sw_pos = SwitchPos(ch_flag);
 }
- */
+
+// get slew rate parameter for an axis
+float AP_Quicktune_Rover::get_slew_rate(const char* axis) const
+{
+    auto &attitude_control = *AR_AttitudeControl::get_singleton();
+    if (strcmp(axis, "ATC_STR_RAT")) {
+        return attitude_control.get_steering_rate_pid().get_pid_info().slew_rate;
+    } else if (strcmp(axis, "ATC_SPEED")) {
+        return attitude_control.get_throttle_speed_pid_info().slew_rate;
+    }
+    gcs().send_text(MAV_SEVERITY_CRITICAL, "RTUN: get_slew_rate unsupported axis:%s", axis);
+    return 0.0;
+}
+
+// @LoggerMessage: QWIK
+// @Description: Quicktune
+// @Field: TimeUS: Time since system startup
+// @Field: ParamNo: number of parameter being tuned
+// @Field: SRate: slew rate
+// @Field: Gain: test gain for current axis and PID element
+// @Field: Param: name of parameter being being tuned
+void AP_Quicktune_Rover::Write_RTUN(float gain, const char* param)
+{
+#if HAL_LOGGING_ENABLED
+    float srate = get_slew_rate(get_current_axis());
+    AP::logger().WriteStreaming("RTUN","TimeUS, SRate,Gain,Param", "QffN",
+                                AP_HAL::micros64(),
+                                srate,
+                                gain,
+                                param);
+#endif
+}
+#endif //AP_QUICKTUNE_ENABLED

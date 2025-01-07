@@ -522,7 +522,8 @@ bool Rover::get_wp_crosstrack_error_m(float &xtrack_error) const
  */
 void Rover::update_quicktune(void)
 {
-    mode_autotune.update();
+    //mode_autotune.update();
+    quick_tune.update();
 }
 #endif
 

@@ -3,13 +3,17 @@
  */
 #pragma once
 
+#include "Rover.h"
+
 #include <AP_Param/AP_Param.h>
+#include <AP_Arming/AP_Arming.h>
 #include <AP_Quicktune/AP_Quicktune.h>
 
-class AP_Quicktune_Rover : public AP_Quicktune {
-
+#if AP_QUICKTUNE_ENABLED
 #define MAX_PARAMS 15
 
+class AP_Quicktune_Rover
+{
     struct PACKED param_rtun {
         AP_Param *param;
         char axis[AP_MAX_NAME_SIZE];
@@ -46,20 +50,19 @@ public:
     CLASS_NO_COPY(AP_Quicktune_Rover);
 
     // methods that affect movement of the vehicle in this mode
-    void update(bool mode_supports_quicktune) override;
-    
-    //void update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag);
+    void update();
+    void update_switch_pos(const  RC_Channel::AuxSwitchPos ch_flag);
 
     static const struct AP_Param::GroupInfo var_info[];
 
 protected:
     // Low, Mid and High must be in the same positions as they are in RC_Channel::AuxSwitchPos
-/*     enum class SwitchPos : uint8_t {
+    enum class SwitchPos : uint8_t {
         LOW,
         MID,
         HIGH,
         NONE,
-    }; */
+    };
     AP_Int8 enable;
     AP_Int8 axes;
     AP_Float strFFRatio;
@@ -88,7 +91,7 @@ protected:
     status_rtun gcs_pid_mask_done[2];
     param_ext param_extras[5];
     bool init_done;
-    
+
     size_t param_count;
 
     // feed forward tuning related local variables
@@ -103,26 +106,27 @@ protected:
     void replace_substring(char* str, const char* old_sub, const char* new_sub);
     bool get_steering_and_throttle(float& steering, float& throttle);
     int snprintf(char* str, size_t size, const char *format, ...) const;
-    bool have_pilot_input() override;
-    void init_params_tables() override;
+    bool have_pilot_input();
+    void init_params_tables();
     void addParameter(const char *name, const char *axis);
     void printParameters() const;
-    void get_all_params() override;
-    void restore_all_params() override;
-    void save_all_params() override;
-    void reset_axes_done() override
-    void restore_gcs_pid_mask() override;
-    const char* get_current_axis() override;
+    void get_all_params();
+    void restore_all_params();
+    void save_all_params();
+    void reset_axes_done();
+    void restore_gcs_pid_mask();
+    const char* get_current_axis();
     float get_time();
-    void setup_filters(const char* axis) override;
-    void adjust_gain(const char* pname, float value) override;
-    void setup_gcs_pid_mask(const char* axis) override;
-    bool update_steering_ff(const char* ff_pname) 
-    bool update_speed_ff(const char* ff_pname) 
-    void advance_axis(const char* axis) override;
+    void setup_filters(const char* axis);
+    void adjust_gain(const char* pname, float value);
+    void setup_gcs_pid_mask(const char* axis);
+    bool update_steering_ff(const char* ff_pname);
+    bool update_speed_ff(const char* ff_pname);
+    void advance_axis(const char* axis);
     void init_steering_ff();
     void init_speed_ff();
-    
-
-
+    float get_slew_rate(const char* axis) const;
+    void Write_RTUN(float gain, const char* param);
 };
+
+#endif // AP_QUICKTUNE_ENABLED

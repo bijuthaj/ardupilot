@@ -273,7 +273,8 @@ bool RC_Channel_Rover::do_aux_function(const AuxFuncTrigger &trigger)
         break;
      //For testing as quick tune not showing in mission planner   
      case AUX_FUNC::FFT_NOTCH_TUNE:
-        rover.mode_autotune.update_switch_pos(ch_flag);
+        //rover.mode_autotune.update_switch_pos(ch_flag);
+        rover.quick_tune.update_switch_pos(ch_flag);
         break;       
 #endif
     default:
