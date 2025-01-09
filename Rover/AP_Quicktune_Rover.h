@@ -108,8 +108,7 @@ protected:
     int snprintf(char* str, size_t size, const char *format, ...) const;
     bool have_pilot_input();
     void init_params_tables();
-    void addParameter(const char *name, const char *axis);
-    void printParameters() const;
+    void add_parameter(const char *name, const char *axis);
     void get_all_params();
     void restore_all_params();
     void save_all_params();
